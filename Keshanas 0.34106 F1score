@@ -1,0 +1,76 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import f1_score
+from xgboost import XGBClassifier
+import warnings
+warnings.filterwarnings("ignore")
+
+# Load your dataset
+df = pd.read_csv("/kaggle/input/idealize-2025-datathon-competition/train.csv")
+
+# Drop columns not useful for prediction
+df.drop(['first_name', 'last_name', 'diagnosis_date', 'treatment_start_date', 'treatment_end_date'], axis=1, inplace=True)
+
+# Handle missing values
+df['cigarettes_per_day'] = df['cigarettes_per_day'].fillna(0).astype(int)
+
+# Label encoding for categorical features
+categorical_cols = df.select_dtypes(include=['object']).columns
+le = LabelEncoder()
+for col in categorical_cols:
+    df[col] = le.fit_transform(df[col])
+
+# Split features and target
+X = df.drop(['record_id', 'survival_status'], axis=1)
+y = df['survival_status']
+
+# Train/test split (for testing locally)
+X_train, X_val, y_train, y_val = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
+
+# Initialize XGBoost Classifier
+model = XGBClassifier(
+    n_estimators=200,
+    max_depth=5,
+    learning_rate=0.1,
+    use_label_encoder=False,
+    eval_metric='logloss',
+    random_state=42
+)
+
+# Train the model
+model.fit(X_train, y_train)
+
+# Evaluate with F1 Score
+y_pred = model.predict(X_val)
+score = f1_score(y_val, y_pred)
+print(f"Validation F1 Score: {score:.4f}")
+
+# Save model
+import joblib
+joblib.dump(model, "lung_cancer_model.pkl")
+
+
+# Load test set
+test = pd.read_csv("/kaggle/input/idealize-2025-datathon-competition/test.csv")
+record_ids = test['record_id']
+
+# Preprocessing like train set
+test.drop(['first_name', 'last_name', 'diagnosis_date', 'treatment_start_date', 'treatment_end_date'], axis=1, inplace=True)
+test['cigarettes_per_day'] = test['cigarettes_per_day'].fillna(0).astype(int)
+
+for col in categorical_cols:
+    if col in test.columns:
+        test[col] = le.fit_transform(test[col].astype(str))
+
+X_test = test.drop(['record_id'], axis=1)
+predictions = model.predict(X_test)
+
+# Save to CSV
+submission = pd.DataFrame({
+    "record_id": record_ids,
+    "survival_status": predictions
+})
+submission.to_csv("submission.csv", index=False)
+print("✅ Submission file saved as submission.csv") 
